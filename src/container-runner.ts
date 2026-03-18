@@ -124,18 +124,29 @@ function buildVolumeMounts(
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
-  const integrationEnv = readEnvFile(['NOTION_API_KEY', 'MS_TODO_CLIENT_ID', 'MS_TODO_CLIENT_SECRET', 'MS_TODO_TENANT_ID']);
+  const integrationEnv = readEnvFile([
+    'NOTION_API_KEY',
+    'MS_TODO_CLIENT_ID',
+    'MS_TODO_CLIENT_SECRET',
+    'MS_TODO_TENANT_ID',
+  ]);
   const mcpServers: Record<string, unknown> = {};
   if (integrationEnv.NOTION_API_KEY) {
     mcpServers['notion'] = {
       command: 'npx',
       args: ['-y', '@notionhq/notion-mcp-server'],
-      env: { OPENAPI_MCP_HEADERS: `{"Authorization": "Bearer ${integrationEnv.NOTION_API_KEY}", "Notion-Version": "2022-06-28"}` },
+      env: {
+        OPENAPI_MCP_HEADERS: `{"Authorization": "Bearer ${integrationEnv.NOTION_API_KEY}", "Notion-Version": "2022-06-28"}`,
+      },
     };
   }
   if (integrationEnv.MS_TODO_CLIENT_ID) {
     // Copy MCP server script into the group's .claude dir so it's available in the container
-    const msTodoMcpSrc = path.join(process.cwd(), 'container', 'ms-todo-mcp.mjs');
+    const msTodoMcpSrc = path.join(
+      process.cwd(),
+      'container',
+      'ms-todo-mcp.mjs',
+    );
     const msTodoMcpDst = path.join(groupSessionsDir, 'ms-todo-mcp.mjs');
     if (fs.existsSync(msTodoMcpSrc)) {
       fs.copyFileSync(msTodoMcpSrc, msTodoMcpDst);
@@ -269,13 +280,21 @@ function buildContainerArgs(
   }
 
   // Pass integration tokens into the container when configured
-  const integrationEnv = readEnvFile(['NOTION_API_KEY', 'MS_TODO_CLIENT_ID', 'MS_TODO_CLIENT_SECRET', 'MS_TODO_TENANT_ID']);
+  const integrationEnv = readEnvFile([
+    'NOTION_API_KEY',
+    'MS_TODO_CLIENT_ID',
+    'MS_TODO_CLIENT_SECRET',
+    'MS_TODO_TENANT_ID',
+  ]);
   if (integrationEnv.NOTION_API_KEY) {
     args.push('-e', `NOTION_API_KEY=${integrationEnv.NOTION_API_KEY}`);
   }
   if (integrationEnv.MS_TODO_CLIENT_ID) {
     args.push('-e', `MS_TODO_CLIENT_ID=${integrationEnv.MS_TODO_CLIENT_ID}`);
-    args.push('-e', `MS_TODO_CLIENT_SECRET=${integrationEnv.MS_TODO_CLIENT_SECRET}`);
+    args.push(
+      '-e',
+      `MS_TODO_CLIENT_SECRET=${integrationEnv.MS_TODO_CLIENT_SECRET}`,
+    );
     args.push('-e', `MS_TODO_TENANT_ID=${integrationEnv.MS_TODO_TENANT_ID}`);
   }
 
