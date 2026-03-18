@@ -56,6 +56,13 @@ export function hasSystemd(): boolean {
 export function openBrowser(url: string): boolean {
   try {
     const platform = getPlatform();
+    if (os.platform() === 'win32') {
+      execSync(`start "" ${JSON.stringify(url)}`, {
+        stdio: 'ignore',
+        shell: true,
+      });
+      return true;
+    }
     if (platform === 'macos') {
       execSync(`open ${JSON.stringify(url)}`, { stdio: 'ignore' });
       return true;

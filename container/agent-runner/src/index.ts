@@ -389,6 +389,26 @@ async function runQuery(
     log(`Additional directories: ${extraDirs.join(', ')}`);
   }
 
+  // Load extra MCP servers from ~/.claude/settings.json (written by host container-runner)
+  type McpServerConfig = { command: string; args?: string[]; env?: Record<string, string> };
+  const extraMcpServers: Record<string, McpServerConfig> = {};
+  const extraMcpAllowedTools: string[] = [];
+  const settingsPath = '/home/node/.claude/settings.json';
+  if (fs.existsSync(settingsPath)) {
+    try {
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+      if (settings.mcpServers && typeof settings.mcpServers === 'object') {
+        for (const [name, cfg] of Object.entries(settings.mcpServers)) {
+          extraMcpServers[name] = cfg as McpServerConfig;
+          extraMcpAllowedTools.push(`mcp__${name}__*`);
+          log(`Loaded extra MCP server: ${name}`);
+        }
+      }
+    } catch (e) {
+      log(`Failed to load extra MCP servers from settings.json: ${e}`);
+    }
+  }
+
   for await (const message of query({
     prompt: stream,
     options: {
@@ -407,7 +427,8 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*'
+        'mcp__nanoclaw__*',
+        ...extraMcpAllowedTools,
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -423,6 +444,7 @@ async function runQuery(
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
           },
         },
+        ...extraMcpServers,
       },
       hooks: {
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],

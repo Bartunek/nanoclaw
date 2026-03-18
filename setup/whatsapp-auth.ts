@@ -183,10 +183,12 @@ export async function run(args: string[]): Promise<void> {
       ? ['src/whatsapp-auth.ts', '--pairing-code', '--phone', phone]
       : ['src/whatsapp-auth.ts'];
 
-  const authProc = spawn('npx', ['tsx', ...authArgs], {
+  const npxBin = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  const authProc = spawn(npxBin, ['tsx', ...authArgs], {
     cwd: projectRoot,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
+    shell: process.platform === 'win32',
   });
 
   const logFile = path.join(projectRoot, 'logs', 'setup.log');

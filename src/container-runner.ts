@@ -26,6 +26,7 @@ import {
   stopContainer,
 } from './container-runtime.js';
 import { detectAuthMode } from './credential-proxy.js';
+import { readEnvFile } from './env.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
@@ -123,28 +124,57 @@ function buildVolumeMounts(
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
-  if (!fs.existsSync(settingsFile)) {
-    fs.writeFileSync(
-      settingsFile,
-      JSON.stringify(
-        {
-          env: {
-            // Enable agent swarms (subagent orchestration)
-            // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
-            CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
-            // Load CLAUDE.md from additional mounted directories
-            // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
-            CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
-            // Enable Claude's memory feature (persists user preferences between sessions)
-            // https://code.claude.com/docs/en/memory#manage-auto-memory
-            CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
-          },
-        },
-        null,
-        2,
-      ) + '\n',
-    );
+  const integrationEnv = readEnvFile(['NOTION_API_KEY', 'MS_TODO_CLIENT_ID', 'MS_TODO_CLIENT_SECRET', 'MS_TODO_TENANT_ID']);
+  const mcpServers: Record<string, unknown> = {};
+  if (integrationEnv.NOTION_API_KEY) {
+    mcpServers['notion'] = {
+      command: 'npx',
+      args: ['-y', '@notionhq/notion-mcp-server'],
+      env: { OPENAPI_MCP_HEADERS: `{"Authorization": "Bearer ${integrationEnv.NOTION_API_KEY}", "Notion-Version": "2022-06-28"}` },
+    };
   }
+  if (integrationEnv.MS_TODO_CLIENT_ID) {
+    // Copy MCP server script into the group's .claude dir so it's available in the container
+    const msTodoMcpSrc = path.join(process.cwd(), 'container', 'ms-todo-mcp.mjs');
+    const msTodoMcpDst = path.join(groupSessionsDir, 'ms-todo-mcp.mjs');
+    if (fs.existsSync(msTodoMcpSrc)) {
+      fs.copyFileSync(msTodoMcpSrc, msTodoMcpDst);
+    }
+    // Copy tokens file if not yet present
+    const tokensHostSrc = path.join(process.cwd(), 'tokens.json');
+    const tokensHostDst = path.join(groupSessionsDir, 'ms-todo-tokens.json');
+    if (fs.existsSync(tokensHostSrc) && !fs.existsSync(tokensHostDst)) {
+      fs.copyFileSync(tokensHostSrc, tokensHostDst);
+    }
+    mcpServers['microsoft-todo'] = {
+      command: 'node',
+      args: ['/home/node/.claude/ms-todo-mcp.mjs'],
+      env: {
+        MSTODO_TOKEN_FILE: '/home/node/.claude/ms-todo-tokens.json',
+        MS_TODO_CLIENT_ID: integrationEnv.MS_TODO_CLIENT_ID,
+        MS_TODO_CLIENT_SECRET: integrationEnv.MS_TODO_CLIENT_SECRET,
+        MS_TODO_TENANT_ID: integrationEnv.MS_TODO_TENANT_ID,
+      },
+    };
+  }
+  const settings: Record<string, unknown> = {
+    env: {
+      // Enable agent swarms (subagent orchestration)
+      // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
+      CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+      // Load CLAUDE.md from additional mounted directories
+      // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
+      CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
+      // Enable Claude's memory feature (persists user preferences between sessions)
+      // https://code.claude.com/docs/en/memory#manage-auto-memory
+      CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+    },
+  };
+  if (Object.keys(mcpServers).length > 0) {
+    settings['mcpServers'] = mcpServers;
+  }
+  // Always write settings.json so MCP servers are kept up to date
+  fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + '\n');
 
   // Sync skills from container/skills/ into each group's .claude/skills/
   const skillsSrc = path.join(process.cwd(), 'container', 'skills');
@@ -236,6 +266,17 @@ function buildContainerArgs(
     args.push('-e', 'ANTHROPIC_API_KEY=placeholder');
   } else {
     args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
+  }
+
+  // Pass integration tokens into the container when configured
+  const integrationEnv = readEnvFile(['NOTION_API_KEY', 'MS_TODO_CLIENT_ID', 'MS_TODO_CLIENT_SECRET', 'MS_TODO_TENANT_ID']);
+  if (integrationEnv.NOTION_API_KEY) {
+    args.push('-e', `NOTION_API_KEY=${integrationEnv.NOTION_API_KEY}`);
+  }
+  if (integrationEnv.MS_TODO_CLIENT_ID) {
+    args.push('-e', `MS_TODO_CLIENT_ID=${integrationEnv.MS_TODO_CLIENT_ID}`);
+    args.push('-e', `MS_TODO_CLIENT_SECRET=${integrationEnv.MS_TODO_CLIENT_SECRET}`);
+    args.push('-e', `MS_TODO_TENANT_ID=${integrationEnv.MS_TODO_TENANT_ID}`);
   }
 
   // Runtime-specific args for host gateway resolution
