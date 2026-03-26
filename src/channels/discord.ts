@@ -1,4 +1,5 @@
 import {
+  AttachmentBuilder,
   Client,
   Events,
   GatewayIntentBits,
@@ -6,8 +7,9 @@ import {
   TextChannel,
 } from 'discord.js';
 
-import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
+import { ASSISTANT_NAME, GROUPS_DIR, TRIGGER_PATTERN } from '../config.js';
 import { readEnvFile } from '../env.js';
+import { processImage } from '../image.js';
 import { logger } from '../logger.js';
 import { registerChannel, ChannelOpts } from './registry.js';
 import {
@@ -92,27 +94,42 @@ export class DiscordChannel implements Channel {
         }
       }
 
-      // Handle attachments — store placeholders so the agent knows something was sent
+      // Handle attachments — download images and process them; describe others as text
       if (message.attachments.size > 0) {
-        const attachmentDescriptions = [...message.attachments.values()].map(
-          (att) => {
-            const contentType = att.contentType || '';
-            if (contentType.startsWith('image/')) {
-              return `[Image: ${att.name || 'image'}]`;
-            } else if (contentType.startsWith('video/')) {
-              return `[Video: ${att.name || 'video'}]`;
-            } else if (contentType.startsWith('audio/')) {
-              return `[Audio: ${att.name || 'audio'}]`;
-            } else {
-              return `[File: ${att.name || 'file'}]`;
+        const group = this.opts.registeredGroups()[chatJid];
+        const groupDir = group ? `${GROUPS_DIR}/${group.folder}` : null;
+        const attachmentDescriptions: string[] = [];
+        for (const att of message.attachments.values()) {
+          const contentType = att.contentType || '';
+          if (contentType.startsWith('image/') && groupDir) {
+            try {
+              const resp = await fetch(att.url);
+              if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+              const arrayBuffer = await resp.arrayBuffer();
+              const buffer = Buffer.from(arrayBuffer);
+              const caption = content || '';
+              const result = await processImage(buffer, groupDir, caption);
+              if (result) {
+                // Caption is embedded in result.content; clear it from content
+                content = '';
+                attachmentDescriptions.push(result.content);
+              } else {
+                attachmentDescriptions.push(`[Image: ${att.name || 'image'}]`);
+              }
+            } catch (err) {
+              logger.warn({ err, att: att.name }, 'Discord image - download failed');
+              attachmentDescriptions.push(`[Image: ${att.name || 'image'}]`);
             }
-          },
-        );
-        if (content) {
-          content = `${content}\n${attachmentDescriptions.join('\n')}`;
-        } else {
-          content = attachmentDescriptions.join('\n');
+          } else if (contentType.startsWith('video/')) {
+            attachmentDescriptions.push(`[Video: ${att.name || 'video'}]`);
+          } else if (contentType.startsWith('audio/')) {
+            attachmentDescriptions.push(`[Audio: ${att.name || 'audio'}]`);
+          } else {
+            attachmentDescriptions.push(`[File: ${att.name || 'file'}]`);
+          }
         }
+        const desc = attachmentDescriptions.join('\n');
+        content = content ? `${content}\n${desc}` : desc;
       }
 
       // Handle reply context — include who the user is replying to
@@ -235,6 +252,26 @@ export class DiscordChannel implements Channel {
       this.client.destroy();
       this.client = null;
       logger.info('Discord bot stopped');
+    }
+  }
+
+  async sendImage(jid: string, imagePath: string, caption?: string): Promise<void> {
+    if (!this.client) {
+      logger.warn('Discord client not initialized');
+      return;
+    }
+    try {
+      const channelId = jid.replace(/^dc:/, '');
+      const channel = await this.client.channels.fetch(channelId);
+      if (!channel || !('send' in channel)) {
+        logger.warn({ jid }, 'Discord channel not found or not text-based');
+        return;
+      }
+      const attachment = new AttachmentBuilder(imagePath, { name: 'qr.png' });
+      await (channel as TextChannel).send({ content: caption || undefined, files: [attachment] });
+      logger.info({ jid }, 'Discord image sent');
+    } catch (err) {
+      logger.error({ jid, err }, 'Failed to send Discord image');
     }
   }
 

@@ -9,6 +9,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
+import QRCode from 'qrcode';
 import { CronExpressionParser } from 'cron-parser';
 
 const IPC_DIR = '/workspace/ipc';
@@ -330,6 +331,65 @@ Use available_groups.json to find the JID for a group. The folder name must be c
     return {
       content: [{ type: 'text' as const, text: `Group "${args.name}" registered. It will start receiving messages immediately.` }],
     };
+  },
+);
+
+server.tool(
+  'generate_qr',
+  `Generate a QR code image and send it to the chat immediately.
+
+For Czech banking payment QR codes (ČNB standard SPD format), build the content string like this:
+SPD*1.0*ACC:{IBAN}+{BIC}*AM:{amount}*CC:CZK*MSG:{message}*X-VS:{variable_symbol}
+
+Example:
+SPD*1.0*ACC:CZ6508000000192000145399+FIOBCZPPXXX*AM:250.00*CC:CZK*MSG:Faktura 2024001*X-VS:20240001
+
+SPD field reference:
+- ACC: IBAN (required). Append +BIC after IBAN if known (e.g. +FIOBCZPPXXX for Fio banka).
+- AM: Amount (optional, e.g. "250.00")
+- CC: Currency code, use CZK (optional)
+- MSG: Payment description, max 60 chars (optional)
+- X-VS: Variable symbol (optional)
+- X-SS: Specific symbol (optional)
+- X-KS: Constant symbol (optional)
+
+For non-payment QR codes, just pass any text, URL, or data as content.`,
+  {
+    content: z.string().describe('The text, URL, or SPD payment string to encode in the QR code'),
+    caption: z.string().optional().describe('Caption text to send alongside the image'),
+  },
+  async (args) => {
+    try {
+      const attachDir = '/workspace/group/attachments';
+      fs.mkdirSync(attachDir, { recursive: true });
+
+      const filename = `qr-${Date.now()}.png`;
+      const filePath = path.join(attachDir, filename);
+      const relativePath = `attachments/${filename}`;
+
+      await QRCode.toFile(filePath, args.content, {
+        type: 'png',
+        width: 400,
+        margin: 2,
+        color: { dark: '#000000', light: '#ffffff' },
+      });
+
+      writeIpcFile(MESSAGES_DIR, {
+        type: 'send_image',
+        chatJid,
+        groupFolder,
+        relativePath,
+        caption: args.caption || '',
+        timestamp: new Date().toISOString(),
+      });
+
+      return { content: [{ type: 'text' as const, text: 'QR code generated and sent.' }] };
+    } catch (err) {
+      return {
+        content: [{ type: 'text' as const, text: `Failed to generate QR code: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
   },
 );
 

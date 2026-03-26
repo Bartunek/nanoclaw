@@ -43,7 +43,6 @@ export interface ContainerInput {
   isScheduledTask?: boolean;
   assistantName?: string;
   imageAttachments?: Array<{ relativePath: string; mediaType: string }>;
-
 }
 
 export interface ContainerOutput {
@@ -131,6 +130,8 @@ function buildVolumeMounts(
     'MS_TODO_CLIENT_ID',
     'MS_TODO_CLIENT_SECRET',
     'MS_TODO_TENANT_ID',
+    'ROHLIK_EMAIL',
+    'ROHLIK_PASSWORD',
   ]);
   const mcpServers: Record<string, unknown> = {};
   if (integrationEnv.NOTION_API_KEY) {
@@ -168,6 +169,20 @@ function buildVolumeMounts(
         MS_TODO_CLIENT_SECRET: integrationEnv.MS_TODO_CLIENT_SECRET,
         MS_TODO_TENANT_ID: integrationEnv.MS_TODO_TENANT_ID,
       },
+    };
+  }
+  if (integrationEnv.ROHLIK_EMAIL && integrationEnv.ROHLIK_PASSWORD) {
+    mcpServers['rohlik'] = {
+      command: 'npx',
+      args: [
+        '-y',
+        'mcp-remote',
+        'https://mcp.rohlik.cz/mcp',
+        '--header',
+        `rhl-email:${integrationEnv.ROHLIK_EMAIL}`,
+        '--header',
+        `rhl-pass:${integrationEnv.ROHLIK_PASSWORD}`,
+      ],
     };
   }
   const settings: Record<string, unknown> = {
@@ -287,6 +302,8 @@ function buildContainerArgs(
     'MS_TODO_CLIENT_ID',
     'MS_TODO_CLIENT_SECRET',
     'MS_TODO_TENANT_ID',
+    'ROHLIK_EMAIL',
+    'ROHLIK_PASSWORD',
   ]);
   if (integrationEnv.NOTION_API_KEY) {
     args.push('-e', `NOTION_API_KEY=${integrationEnv.NOTION_API_KEY}`);

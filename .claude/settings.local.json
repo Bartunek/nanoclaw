@@ -28,7 +28,17 @@
       "Bash(ls:*)",
       "Bash(cd:*)",
       "Bash(find:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(MSYS_NO_PATHCONV=1 docker build -t nanoclaw-agent container/)",
+      "Bash(wmic process:*)",
+      "Bash(docker context:*)",
+      "WebFetch(domain:www.rohlik.cz)",
+      "Bash(\"C:/Users/Gsus/Documents/DEV/nanoclaw/.env\")",
+      "Bash(for dir:*)",
+      "Bash(do)",
+      "Bash(cp container/agent-runner/src/*.ts \"$dir\")",
+      "Bash(done)",
+      "Bash(grep -oP '\\\\d+$')"
     ]
   }
 }

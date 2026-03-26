@@ -211,7 +211,11 @@ export class WhatsAppChannel implements Channel {
                 const buffer = await downloadMediaMessage(msg, 'buffer', {});
                 const groupDir = path.join(GROUPS_DIR, groups[chatJid].folder);
                 const caption = normalized?.imageMessage?.caption ?? '';
-                const result = await processImage(buffer as Buffer, groupDir, caption);
+                const result = await processImage(
+                  buffer as Buffer,
+                  groupDir,
+                  caption,
+                );
                 if (result) {
                   content = result.content;
                 }
@@ -292,6 +296,20 @@ export class WhatsAppChannel implements Channel {
 
   ownsJid(jid: string): boolean {
     return jid.endsWith('@g.us') || jid.endsWith('@s.whatsapp.net');
+  }
+
+  async sendImage(jid: string, imagePath: string, caption?: string): Promise<void> {
+    if (!this.connected) {
+      logger.warn({ jid }, 'WhatsApp not connected, cannot send image');
+      return;
+    }
+    try {
+      const buffer = fs.readFileSync(imagePath);
+      await this.sock.sendMessage(jid, { image: buffer, caption: caption || '' });
+      logger.info({ jid }, 'WhatsApp image sent');
+    } catch (err) {
+      logger.error({ jid, err }, 'Failed to send WhatsApp image');
+    }
   }
 
   async disconnect(): Promise<void> {
