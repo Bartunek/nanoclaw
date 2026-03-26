@@ -298,14 +298,21 @@ export class WhatsAppChannel implements Channel {
     return jid.endsWith('@g.us') || jid.endsWith('@s.whatsapp.net');
   }
 
-  async sendImage(jid: string, imagePath: string, caption?: string): Promise<void> {
+  async sendImage(
+    jid: string,
+    imagePath: string,
+    caption?: string,
+  ): Promise<void> {
     if (!this.connected) {
       logger.warn({ jid }, 'WhatsApp not connected, cannot send image');
       return;
     }
     try {
       const buffer = fs.readFileSync(imagePath);
-      await this.sock.sendMessage(jid, { image: buffer, caption: caption || '' });
+      await this.sock.sendMessage(jid, {
+        image: buffer,
+        caption: caption || '',
+      });
       logger.info({ jid }, 'WhatsApp image sent');
     } catch (err) {
       logger.error({ jid, err }, 'Failed to send WhatsApp image');
