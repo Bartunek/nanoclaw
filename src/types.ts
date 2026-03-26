@@ -92,6 +92,13 @@ export interface Channel {
   syncGroups?(force: boolean): Promise<void>;
   // Optional: send an image file to a JID.
   sendImage?(jid: string, imagePath: string, caption?: string): Promise<void>;
+  // Optional: reaction support
+  sendReaction?(
+    chatJid: string,
+    messageKey: { id: string; remoteJid: string; fromMe?: boolean; participant?: string },
+    emoji: string
+  ): Promise<void>;
+  reactToLatestMessage?(chatJid: string, emoji: string): Promise<void>;
 }
 
 // Callback type that channels use to deliver inbound messages
