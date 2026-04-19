@@ -117,7 +117,10 @@ export class DiscordChannel implements Channel {
                 attachmentDescriptions.push(`[Image: ${att.name || 'image'}]`);
               }
             } catch (err) {
-              logger.warn({ err, att: att.name }, 'Discord image - download failed');
+              logger.warn(
+                { err, att: att.name },
+                'Discord image - download failed',
+              );
               attachmentDescriptions.push(`[Image: ${att.name || 'image'}]`);
             }
           } else if (contentType.startsWith('video/')) {
@@ -255,7 +258,11 @@ export class DiscordChannel implements Channel {
     }
   }
 
-  async sendImage(jid: string, imagePath: string, caption?: string): Promise<void> {
+  async sendImage(
+    jid: string,
+    imagePath: string,
+    caption?: string,
+  ): Promise<void> {
     if (!this.client) {
       logger.warn('Discord client not initialized');
       return;
@@ -268,7 +275,10 @@ export class DiscordChannel implements Channel {
         return;
       }
       const attachment = new AttachmentBuilder(imagePath, { name: 'qr.png' });
-      await (channel as TextChannel).send({ content: caption || undefined, files: [attachment] });
+      await (channel as TextChannel).send({
+        content: caption || undefined,
+        files: [attachment],
+      });
       logger.info({ jid }, 'Discord image sent');
     } catch (err) {
       logger.error({ jid, err }, 'Failed to send Discord image');
