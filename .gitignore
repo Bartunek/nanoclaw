@@ -35,4 +35,8 @@ groups/global/*
 # Skills system (local per-installation state)
 .nanoclaw/
 
+# Local Claude state
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
 agents-sdk-docs
