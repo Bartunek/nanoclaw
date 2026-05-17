@@ -23,6 +23,7 @@ ARG CLAUDE_CODE_VERSION=2.1.128
 ARG AGENT_BROWSER_VERSION=latest
 ARG VERCEL_VERSION=52.2.1
 ARG BUN_VERSION=1.3.12
+ARG CALENDAR_MCP_VERSION=2.6.1
 
 # ---- System dependencies -----------------------------------------------------
 # tini: correct PID 1 / signal forwarding so outbound.db writes finalize on
@@ -114,6 +115,9 @@ RUN --mount=type=cache,target=/root/.cache/pnpm \
 # Actual script lives in the mounted source at /app/src/cli/ncl.ts.
 RUN printf '#!/bin/sh\nexec bun /app/src/cli/ncl.ts "$@"\n' > /usr/local/bin/ncl && \
     chmod +x /usr/local/bin/ncl
+
+RUN --mount=type=cache,target=/root/.cache/pnpm \
+    pnpm install -g "@cocal/google-calendar-mcp@${CALENDAR_MCP_VERSION}"
 
 # ---- Entrypoint --------------------------------------------------------------
 COPY entrypoint.sh /app/entrypoint.sh
