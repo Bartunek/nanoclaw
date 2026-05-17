@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git fetch *)",
+      "Bash(git merge *)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm run *)",
+      "Bash(grep -A1 'name: chat$' pnpm-lock.yaml)",
+      "Bash(pnpm why *)",
+      "Bash(pnpm test *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git check-ignore *)",
+      "Bash(pnpm exec *)",
+      "Bash(git log *)",
+      "Bash(rclone version *)",
+      "Bash(apt list *)",
+      "Bash(rclone lsd *)",
+      "Bash(rclone mkdir *)",
+      "Bash(rclone bisync *)",
+      "Bash(onecli apps *)",
+      "Bash(onecli agents *)",
+      "Bash(./container/build.sh)",
+      "Bash(onecli --help)",
+      "Bash(onecli config *)",
+      "Bash(docker compose *)",
+      "Bash(docker exec *)",
+      "Bash(curl *)",
+      "Bash(docker port *)",
+      "Bash(systemctl --user restart nanoclaw-v2-d7cc39ad.service)",
+      "Bash(systemctl --user is-active nanoclaw-v2-d7cc39ad.service)",
+      "Bash(xargs -r docker kill)",
+      "Bash(awk '/18:59:1[5-9]|18:59:2[0-9]|18:59:3[0-9]/' logs/nanoclaw.error.log)",
+      "Skill(migrate-nanoclaw)",
+      "Bash(git ls-tree *)"
+    ]
+  }
+}

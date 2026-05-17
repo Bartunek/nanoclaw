@@ -181,10 +181,7 @@ async function main(): Promise<void> {
   // 8. Dashboard (optional)
   const dashboardEnv = readEnvFile(['DASHBOARD_SECRET', 'DASHBOARD_PORT']);
   const dashboardSecret = process.env.DASHBOARD_SECRET || dashboardEnv.DASHBOARD_SECRET;
-  const dashboardPort = parseInt(
-    process.env.DASHBOARD_PORT || dashboardEnv.DASHBOARD_PORT || '3100',
-    10,
-  );
+  const dashboardPort = parseInt(process.env.DASHBOARD_PORT || dashboardEnv.DASHBOARD_PORT || '3100', 10);
   if (dashboardSecret) {
     const { startDashboard } = await import('@nanoco/nanoclaw-dashboard');
     const { startDashboardPusher } = await import('./dashboard-pusher.js');
