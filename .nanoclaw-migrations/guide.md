@@ -5,6 +5,8 @@ Base (merge-base): `93ec82c`
 HEAD at generation: `9c48b83`
 Upstream HEAD at generation: `78bb6cb`
 
+Last applied: 2026-05-17 — upgraded to upstream `78bb6cb`, post-upgrade HEAD `c1bb230` (squash of all customizations) + `0fa0ac3` (guide carry-forward).
+
 ## Migration Plan
 
 Order of operations:
