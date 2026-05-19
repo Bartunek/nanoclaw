@@ -741,7 +741,8 @@ registerChannelAdapter('whatsapp', {
 
         if (text) {
           const formatted = formatWhatsApp(text);
-          const prefixed = ASSISTANT_HAS_OWN_NUMBER ? formatted : `${ASSISTANT_NAME}: ${formatted}`;
+          const name = message.senderName || ASSISTANT_NAME;
+          const prefixed = ASSISTANT_HAS_OWN_NUMBER ? formatted : `${name}: ${formatted}`;
           return sendRawMessage(platformId, prefixed);
         }
       },

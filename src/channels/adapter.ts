@@ -98,6 +98,13 @@ export interface OutboundMessage {
   kind: string;
   content: unknown; // parsed JSON from messages_out
   files?: OutboundFile[]; // file attachments from the session outbox
+  /**
+   * Display name of the sending agent group. Adapters that prefix outbound
+   * messages with a sender label (e.g. WhatsApp when the bot shares a user's
+   * account) should prefer this over a global env var so each agent posts
+   * under its own name. Optional — adapters fall back to their own default.
+   */
+  senderName?: string;
 }
 
 /** Discovered conversation info (from syncConversations). */

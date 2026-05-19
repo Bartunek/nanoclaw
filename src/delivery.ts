@@ -57,6 +57,7 @@ export interface ChannelDeliveryAdapter {
     kind: string,
     content: string,
     files?: OutboundFile[],
+    senderName?: string,
   ): Promise<string | undefined>;
   setTyping?(channelType: string, platformId: string, threadId: string | null): Promise<void>;
 }
@@ -353,6 +354,8 @@ async function deliverMessage(
       ? readOutboxFiles(session.agent_group_id, session.id, msg.id, content.files as string[])
       : undefined;
 
+  const senderName = getAgentGroup(session.agent_group_id)?.name;
+
   const platformMsgId = await deliveryAdapter.deliver(
     msg.channel_type,
     msg.platform_id,
@@ -360,6 +363,7 @@ async function deliverMessage(
     msg.kind,
     msg.content,
     files,
+    senderName,
   );
   log.info('Message delivered', {
     id: msg.id,
