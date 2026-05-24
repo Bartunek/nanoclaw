@@ -25,6 +25,7 @@ ARG VERCEL_VERSION=52.2.1
 ARG BUN_VERSION=1.3.12
 ARG CALENDAR_MCP_VERSION=2.6.1
 ARG GMAIL_MCP_VERSION=1.1.11
+ARG GH_VERSION=2.92.0
 
 # ---- System dependencies -----------------------------------------------------
 # tini: correct PID 1 / signal forwarding so outbound.db writes finalize on
@@ -71,6 +72,22 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" && \
     install -m 0755 /root/.bun/bin/bun /usr/local/bin/bun && \
     rm -rf /root/.bun
+
+# ---- GitHub CLI -------------------------------------------------------------
+# Lets agents read PR/issue context (gh pr view/diff) when wired to GitHub
+# channels. Credentials are NOT baked in: the placeholder GH_TOKEN below makes
+# gh proceed past its local-auth check, and the OneCLI gateway overrides the
+# Authorization header per-request with the real vault secret for api.github.com
+# (only for agents that have a matching credential assigned). Pinned binary
+# install, arch-aware.
+RUN arch="$(dpkg --print-architecture)" && \
+    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${arch}.tar.gz" -o /tmp/gh.tar.gz && \
+    tar -xzf /tmp/gh.tar.gz -C /tmp && \
+    install -m 0755 "/tmp/gh_${GH_VERSION}_linux_${arch}/bin/gh" /usr/local/bin/gh && \
+    rm -rf /tmp/gh*
+# Placeholder so `gh` passes its auth precheck; the gateway injects the real
+# token. Harmless for agents without GitHub access (their requests just 401).
+ENV GH_TOKEN=onecli-managed
 
 # ---- agent-runner deps -------------------------------------------------------
 # Deps are cached independently of CLI versions. Source is NOT baked in —
