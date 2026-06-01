@@ -582,17 +582,24 @@ registerChannelAdapter('whatsapp', {
               }, RECONNECT_DELAY_MS);
             });
           } else {
-            log.info('WhatsApp logged out');
-            // Delete auth credentials immediately. Keeping stale credentials
-            // causes the next service restart to attempt authentication with an
-            // invalidated session, producing a second 401 that can trigger
-            // WhatsApp's re-link cooldown ("can't link new devices now").
-            try {
-              fs.rmSync(authDir, { recursive: true, force: true });
-              fs.mkdirSync(authDir, { recursive: true });
-              log.info('WhatsApp auth cleared — set WHATSAPP_ENABLED=true and restart to re-link');
-            } catch (err) {
-              log.error('Failed to clear WhatsApp auth after logout', { err });
+            // Only clear creds on a TRUE logout (reason === loggedOut). On a
+            // clean shutdown (shuttingDown) we want to keep auth so the next
+            // boot reconnects silently — otherwise every `systemctl restart`
+            // forces a re-pair.
+            const isLogout = !shuttingDown && reason === DisconnectReason.loggedOut;
+            if (isLogout) {
+              log.info('WhatsApp logged out');
+              // Delete auth credentials immediately. Keeping stale credentials
+              // causes the next service restart to attempt authentication with an
+              // invalidated session, producing a second 401 that can trigger
+              // WhatsApp's re-link cooldown ("can't link new devices now").
+              try {
+                fs.rmSync(authDir, { recursive: true, force: true });
+                fs.mkdirSync(authDir, { recursive: true });
+                log.info('WhatsApp auth cleared — set WHATSAPP_ENABLED=true and restart to re-link');
+              } catch (err) {
+                log.error('Failed to clear WhatsApp auth after logout', { err });
+              }
             }
             if (rejectFirstOpen) {
               rejectFirstOpen(new Error('WhatsApp logged out'));
@@ -772,6 +779,69 @@ registerChannelAdapter('whatsapp', {
               err,
               remoteJid: msg.key?.remoteJid,
             });
+          }
+        }
+      });
+
+      // Inbound reactions (emoji tap on a message).
+      // Baileys emits `messages.reaction` with `key` = target message's key and
+      // `reaction.key` = reactor's own message envelope (carries participant/fromMe).
+      // We only forward reactions whose target is the bot's own message — random
+      // reactions on other participants' messages would otherwise wake the agent
+      // for every emoji in a group.
+      sock.ev.on('messages.reaction', async (reactions) => {
+        for (const item of reactions) {
+          try {
+            // Baileys populates remoteJidAlt / participantAlt at runtime, but
+            // messages.reaction types its keys as bare proto.IMessageKey
+            // (without the WAMessageKey extension fields). Cast for access.
+            const targetKey = item.key as WAMessageKey | null | undefined;
+            const reactorKey = item.reaction?.key as WAMessageKey | null | undefined;
+            if (!targetKey?.fromMe) continue; // not a reaction to our message
+            if (reactorKey?.fromMe) continue; // we initiated this reaction
+
+            const emoji = (item.reaction?.text ?? '').trim();
+            const isUnreact = !emoji;
+
+            const rawChat = reactorKey?.remoteJid || targetKey.remoteJid;
+            if (!rawChat || rawChat === 'status@broadcast') continue;
+            const chatJid = await translateJid(rawChat, reactorKey?.remoteJidAlt);
+            const isGroup = chatJid.endsWith('@g.us');
+
+            const rawSender = reactorKey?.participant || reactorKey?.remoteJid || rawChat;
+            const sender = rawSender.endsWith('@lid')
+              ? await translateJid(rawSender, reactorKey?.participantAlt)
+              : rawSender;
+            const senderName = sender.split('@')[0];
+
+            const ts = item.reaction?.senderTimestampMs
+              ? new Date(Number(item.reaction.senderTimestampMs)).toISOString()
+              : new Date().toISOString();
+
+            const text = isUnreact ? 'Removed reaction from your message' : `Reacted ${emoji} to your message`;
+
+            const inbound: InboundMessage = {
+              id: reactorKey?.id || `wa-react-${Date.now()}`,
+              kind: 'chat',
+              isMention: true,
+              isGroup,
+              content: {
+                text,
+                sender,
+                senderName,
+                isGroup,
+                chatJid,
+                reaction: {
+                  emoji: isUnreact ? null : emoji,
+                  targetMessageId: targetKey.id ?? null,
+                  removed: isUnreact,
+                },
+              },
+              timestamp: ts,
+            };
+            setupConfig.onInbound(chatJid, null, inbound);
+          } catch (err) {
+            log.error('Error processing WhatsApp reaction', { err });
           }
         }
       });
