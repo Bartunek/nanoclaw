@@ -530,8 +530,18 @@ registerChannelAdapter('whatsapp', {
         },
       });
 
-      // Request pairing code if phone number is set and not yet registered
-      if (phoneNumber && !state.creds.registered) {
+      // Request pairing code only when there's no paired account yet.
+      //
+      // We can't use `state.creds.registered` here: Baileys 7.x doesn't
+      // reliably flip that flag back to `true` after the post-pair stream
+      // restart (statusCode 515). An already-paired socket would then see
+      // `registered=false` and request a *new* pairing code 3s after the
+      // restart, which the WhatsApp server rejects with 401 and the adapter
+      // wipes the auth directory — re-pair from scratch every restart.
+      //
+      // `state.creds.me` is set as part of the QR / pairing-code handshake
+      // and is the authoritative "this socket has an account" signal.
+      if (phoneNumber && !state.creds.me) {
         setTimeout(async () => {
           try {
             const code = await sock.requestPairingCode(phoneNumber);
