@@ -57,10 +57,10 @@ export interface ChannelDeliveryAdapter {
     kind: string,
     content: string,
     files?: OutboundFile[],
-    senderName?: string,
     /** Delivering adapter instance (defaults to channelType downstream).
      *  Host-internal only — containers never see instance. */
     instance?: string,
+    senderName?: string,
   ): Promise<string | undefined>;
   setTyping?(channelType: string, platformId: string, threadId: string | null, instance?: string): Promise<void>;
 }
@@ -377,8 +377,8 @@ async function deliverMessage(
     msg.kind,
     msg.content,
     files,
-    senderName,
     deliverInstance,
+    senderName,
   );
   log.info('Message delivered', {
     id: msg.id,

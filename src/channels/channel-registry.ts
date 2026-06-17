@@ -81,8 +81,8 @@ export function createChannelDeliveryAdapter(): ChannelDeliveryAdapter {
       kind: string,
       content: string,
       files?: OutboundFile[],
-      senderName?: string,
       instance?: string,
+      senderName?: string,
     ): Promise<string | undefined> {
       const adapter = getChannelAdapterExact(instance ?? channelType);
       if (!adapter) {
