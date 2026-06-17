@@ -47,3 +47,6 @@ AGENTS.md
 docs/maintainer-guide.md
 docs/drafts/
 forks.md
+
+# Microsoft To Do OAuth tokens (never commit)
+groups/*/ms-todo-tokens.json
