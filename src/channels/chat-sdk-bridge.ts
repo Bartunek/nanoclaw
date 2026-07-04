@@ -170,12 +170,42 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
           width: (att as unknown as Record<string, unknown>).width,
           height: (att as unknown as Record<string, unknown>).height,
         };
+        // Adapter-provided URL (some Chat SDK adapters — e.g. @chat-adapter/discord
+        // 4.29.0 — expose only `url` on inbound attachments, not fetchData()).
+        const attUrl = (att as unknown as Record<string, unknown>).url;
         if (att.fetchData) {
           try {
             const buffer = await att.fetchData();
             entry.data = buffer.toString('base64');
           } catch (err) {
             log.warn('Failed to download attachment', { type: att.type, err });
+          }
+        } else if (typeof attUrl === 'string' && attUrl) {
+          // No fetchData(): download the bytes ourselves at receipt time so the
+          // host inbox-routing (session-manager.extractAttachmentFiles) can stage
+          // the file and hand the agent a readable localPath — matching the
+          // fetchData() path above. Doing this host-side (vs. passing the URL into
+          // the container) avoids egress-lockdown and Discord's ephemeral signed
+          // URLs expiring before the agent runs. Guard on size to avoid a giant
+          // base64 row in inbound.db; fall back to passing the URL through.
+          const MAX_INLINE_BYTES = 30 * 1024 * 1024;
+          const size = typeof att.size === 'number' ? att.size : 0;
+          if (size > MAX_INLINE_BYTES) {
+            log.warn('Attachment too large to inline; passing URL through', { type: att.type, size });
+            entry.url = attUrl;
+          } else {
+            try {
+              const res = await fetch(attUrl);
+              if (res.ok) {
+                entry.data = Buffer.from(await res.arrayBuffer()).toString('base64');
+              } else {
+                log.warn('Failed to fetch attachment URL', { type: att.type, status: res.status });
+                entry.url = attUrl;
+              }
+            } catch (err) {
+              log.warn('Failed to fetch attachment URL', { type: att.type, err });
+              entry.url = attUrl;
+            }
           }
         }
         enriched.push(entry);
