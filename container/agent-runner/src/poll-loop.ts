@@ -11,9 +11,11 @@ import { getInboundDb, touchHeartbeat, clearStaleProcessingAcks } from './db/con
 import {
   clearContinuation,
   clearCurrentInReplyTo,
+  clearTurnSends,
   migrateLegacyContinuation,
   setContinuation,
   setCurrentInReplyTo,
+  wasSentThisTurn,
 } from './db/session-state.js';
 import {
   formatMessages,
@@ -249,6 +251,10 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     // Publish the batch's in_reply_to so MCP tools (send_message, send_file)
     // can stamp it on outbound rows — needed for a2a return-path routing.
     setCurrentInReplyTo(routing.inReplyTo);
+    // Start the turn's send ledger empty — a previous batch's sends must never
+    // suppress this one's (the same daily digest text two days running is a
+    // legitimate repeat, not an echo).
+    clearTurnSends();
     try {
       const result = await processQuery(
         query,
@@ -292,6 +298,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
       log(`Errored batch will be acked completed — ${processingIds.length} message(s), no redelivery`);
     } finally {
       clearCurrentInReplyTo();
+      clearTurnSends();
     }
 
     // Ensure completed even if processQuery ended without a result event
@@ -679,6 +686,15 @@ export function dispatchResultText(
     if (!dest) {
       log(`Unknown destination in <message to="${toName}">, dropping block`);
       scratchpadParts.push(`[dropped: unknown destination "${toName}"] ${body}`);
+      continue;
+    }
+    // Chat-session half of the same-turn double-delivery guard. Task runs bar
+    // final-text blocks entirely (above); a chat session legitimately uses both
+    // paths, so only suppress the exact case that reads as a bug to the user —
+    // this destination already received this body from send_message this turn.
+    if (wasSentThisTurn(dest.name, body)) {
+      log(`Duplicate suppressed: <message to="${toName}"> repeats a send_message already delivered this turn`);
+      scratchpadParts.push(`[duplicate suppressed — already sent to "${toName}" this turn] ${body}`);
       continue;
     }
     sendToDestination(dest, body, routing);

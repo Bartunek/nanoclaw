@@ -24,6 +24,7 @@ them.
 | `src/channels/adapter.ts`, `channel-registry.ts`, `src/delivery.ts`, `src/index.ts` | Per-agent `senderName` prefix threaded from delivery through the adapter registry into outbound sends. | `b126569` + merge-resolution commits |
 | `container/Dockerfile` | Adds `gh` CLI (pinned `ARG GH_VERSION`) and the Gmail MCP server to the agent image. | `c146add` + gh-CLI commit |
 | `container/skills/whatsapp-formatting/` | Restored from `upstream/channels` after 2.1.54 moved it off trunk. WhatsApp is installed and Clawie + family reference it. Copy from `upstream/channels`, **do not** re-run `/add-whatsapp`. `vercel-cli` was intentionally **not** restored (no group uses it; `vercel` is opt-in via `/add-vercel`). | `9b21b17e` |
+| `container/agent-runner/src/db/session-state.ts`, `mcp-tools/core.ts`, `poll-loop.ts` (+ `chat-duplicate-guard.test.ts`) | **Chat-session double-delivery guard.** A turn has two delivery paths — the `send_message` MCP tool and `<message to="name">` blocks in the final text — and agents routinely use both for the *same* content, so the message lands in the channel twice a few seconds apart. Upstream fixed this only for task runs (`routing.taskRun` bars final-text blocks entirely); chat sessions were unguarded. Adds a per-turn, DB-backed send ledger (`recordTurnSend` / `wasSentThisTurn` / `clearTurnSends` — in outbound.db because the MCP server is a separate process) and drops a final-text block that repeats a same-turn tool send to the same destination. Not yet upstream — re-check on each `/update-nanoclaw`. | 2026-08-11 |
 
 ## Memory model (post-2.1.54)
 
@@ -39,6 +40,15 @@ them.
   `groups/dm-with-honza/memory/` (gitignored) to preserve them. Family/Pontee had
   no native memory. A full `/migrate-memory` reorg of `CLAUDE.local.md` remains
   optional cleanup.
+
+## Per-group additions (gitignored, but easy to lose)
+
+`groups/*` is gitignored, so these live only on this host — a fresh clone or a
+group re-scaffold will not have them.
+
+| Path | What / why |
+|------|------------|
+| `groups/*/.claude/agents/advisor.md` (all three groups) | Advisor subagent (Opus) for second opinions. Loaded as a **project**-scope agent because the container's cwd is `/workspace/agent` and the Claude provider sets `settingSources: ['project','user','local']`. Verified that `claude@2.1.197` reads `.claude/agents` and exposes `subagent_type`. Calling instructions live in each group's `CLAUDE.local.md` (created for `pontee`, which had none). Per-group deltas: the calling agent's name, and a final review bullet — GitHub PR house rule for `dm-with-honza`, blast-radius-on-people for `family`/`pontee`. Subagents do **not** inherit the parent's transcript — the caller must pass context in the Task prompt. |
 
 ## Installed channel files customized beyond their `channels`-branch baseline
 
