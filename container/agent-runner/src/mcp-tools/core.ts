@@ -11,7 +11,7 @@ import path from 'path';
 
 import { findByName, getAllDestinations } from '../destinations.js';
 import { getMessageIdBySeq, getRoutingBySeq, writeMessageOut } from '../db/messages-out.js';
-import { getCurrentInReplyTo, recordTurnSend } from '../db/session-state.js';
+import { getCurrentInReplyTo } from '../db/session-state.js';
 import { getSessionRouting } from '../db/session-routing.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
@@ -102,11 +102,6 @@ export const sendMessage: McpToolDefinition = {
       thread_id: routing.thread_id,
       content: JSON.stringify({ text }),
     });
-
-    // Same-turn ledger: lets the final-text path recognize this send and drop
-    // an echoing <message to> block instead of delivering it twice. Keyed on
-    // the canonical destination name so "Lobster" and "lobster" agree.
-    recordTurnSend(findByName(to)?.name ?? to, text);
 
     log(`send_message: #${seq} → ${routing.resolvedName}`);
     return ok(`Message sent to ${routing.resolvedName} (id: ${seq})`);

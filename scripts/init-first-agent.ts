@@ -24,6 +24,7 @@
  *     --platform-id discord:@me:1491573333382523708 \
  *     --display-name "Gavriel" \
  *     [--agent-name "Andy"] \
+ *     [--agent-group-id <id>] \       # wire an agent setup already created
  *     [--welcome "System instruction: ..."] \
  *     [--role owner|admin|member] \  # default: owner
  *     [--engage-pattern "."]         # explicit DM engage regex override
@@ -31,6 +32,7 @@
  * For direct-addressable channels (telegram, whatsapp, etc.), --platform-id
  * is typically the same as the handle in --user-id, with the channel prefix.
  */
+import fs from 'fs';
 import net from 'net';
 import path from 'path';
 
@@ -42,7 +44,7 @@ import '../src/channels/index.js';
 import { resolveUnknownSenderPolicy, resolveWiringDefaults } from '../src/channels/channel-defaults.js';
 import { hasDeclaredChannelDefaults } from '../src/channels/channel-registry.js';
 import { DATA_DIR, GROUPS_DIR } from '../src/config.js';
-import { createAgentGroup, getAgentGroupByFolder } from '../src/db/agent-groups.js';
+import { createAgentGroup, getAgentGroup, getAgentGroupByFolder } from '../src/db/agent-groups.js';
 import { initDb } from '../src/db/connection.js';
 import {
   createMessagingGroup,
@@ -68,6 +70,7 @@ interface Args {
   platformId: string;
   displayName: string;
   agentName: string;
+  agentGroupId?: string;
   welcome: string;
   role: Role;
   /** Explicit engage regex for the DM wiring; omitted = channel declaration / '.'. */
@@ -75,6 +78,23 @@ interface Args {
 }
 
 const DEFAULT_WELCOME = 'System instruction: run /welcome to introduce yourself to the user on this new channel.';
+
+/**
+ * Channel-specific welcome addendum, matched HOST-SIDE: this composer knows
+ * the channel, so the welcome skill never scans for applicability — it just
+ * follows the pointer when one is present. Channel install skills drop
+ * `container/skills/welcome/addenda/<channel>.md`; with no file the default
+ * welcome is byte-identical to today's and the skill runs as written.
+ * An explicit --welcome override is always respected verbatim.
+ */
+function defaultWelcome(channel: string): string {
+  const hostPath = path.resolve(process.cwd(), 'container', 'skills', 'welcome', 'addenda', `${channel}.md`);
+  if (!fs.existsSync(hostPath)) return DEFAULT_WELCOME;
+  return (
+    `${DEFAULT_WELCOME} First read /app/skills/welcome/addenda/${channel}.md and follow it — ` +
+    'it adjusts the welcome for this channel.'
+  );
+}
 
 const DEFAULT_ROLE: Role = 'owner';
 
@@ -102,6 +122,10 @@ function parseArgs(argv: string[]): Args {
         break;
       case '--agent-name':
         out.agentName = val;
+        i++;
+        break;
+      case '--agent-group-id':
+        out.agentGroupId = val;
         i++;
         break;
       case '--welcome':
@@ -141,7 +165,8 @@ function parseArgs(argv: string[]): Args {
     platformId: out.platformId!,
     displayName: out.displayName!,
     agentName: out.agentName?.trim() || out.displayName!,
-    welcome: out.welcome?.trim() || DEFAULT_WELCOME,
+    agentGroupId: out.agentGroupId?.trim() || undefined,
+    welcome: out.welcome?.trim() || defaultWelcome(out.channel!),
     role: out.role ?? DEFAULT_ROLE,
     engagePattern: out.engagePattern?.trim() || undefined,
   };
@@ -161,20 +186,29 @@ function wireIfMissing(mg: MessagingGroup, ag: AgentGroup, now: string, label: s
     console.log(`Wiring already exists: ${existing.id} (${label})`);
     return;
   }
+  // Wiring defaults come from the channel's declaration when it has one
+  // (resolveWiringDefaults: engage fields + session_mode + the threads stamp
+  // derived from it — a context whose conversations are thread-rooted
+  // declares per-thread sessions and gets correct session identity from the
+  // first message); stale (undeclared) adapters keep the legacy behavior
+  // exactly: shared sessions, threads column NULL (inherit).
+  const isGroup = mg.is_group === 1;
+  const channelKey = mg.instance ?? mg.channel_type;
+  const resolved = hasDeclaredChannelDefaults(channelKey, mg.channel_type)
+    ? resolveWiringDefaults(channelKey, isGroup, ag.name, mg.channel_type)
+    : undefined;
   // Engage defaults, first hit wins: explicit --engage-pattern → the
   // channel's declared defaults → the legacy heuristic for stale
   // (undeclared) adapters: DMs (is_group=0) respond to everything via a '.'
   // regex, group chats are mention-only; admins can reconfigure via
-  // /manage-channels once the agent is in use.
-  const isGroup = mg.is_group === 1;
-  const channelKey = mg.instance ?? mg.channel_type;
+  // /manage-channels once the agent is in use. An explicit pattern only
+  // overrides the engage fields — the declared session defaults still apply.
   const engage = engagePattern
     ? { engage_mode: 'pattern' as const, engage_pattern: engagePattern }
-    : hasDeclaredChannelDefaults(channelKey, mg.channel_type)
-      ? resolveWiringDefaults(channelKey, isGroup, ag.name, mg.channel_type)
-      : isGroup
+    : (resolved ??
+      (isGroup
         ? { engage_mode: 'mention' as const, engage_pattern: null }
-        : { engage_mode: 'pattern' as const, engage_pattern: '.' };
+        : { engage_mode: 'pattern' as const, engage_pattern: '.' }));
   createMessagingGroupAgent({
     id: generateId('mga'),
     messaging_group_id: mg.id,
@@ -186,7 +220,8 @@ function wireIfMissing(mg: MessagingGroup, ag: AgentGroup, now: string, label: s
     // messages carry no value ('drop').
     sender_scope: 'all',
     ignored_message_policy: 'drop',
-    session_mode: 'shared',
+    session_mode: resolved?.session_mode ?? 'shared',
+    ...(resolved?.threads !== undefined && resolved?.threads !== null ? { threads: resolved.threads } : {}),
     priority: 0,
     created_at: now,
   });
@@ -213,36 +248,44 @@ async function main(): Promise<void> {
   // Owner grant is deferred until after the agent group is resolved, since
   // an admin grant is scoped to that group. See step 2b.
 
-  // 2. Agent group + filesystem.
-  const folder = `dm-with-${normalizeName(args.displayName)}`;
+  // 2. Agent group + filesystem. Setup-created template groups arrive by id;
+  // this script owns only role, membership, channel wiring, and welcome.
   const pickedProvider = process.env.NANOCLAW_PICKED_PROVIDER?.trim().toLowerCase();
-  let ag: AgentGroup | undefined = getAgentGroupByFolder(folder);
-  if (!ag) {
-    const agId = generateId('ag');
-    createAgentGroup({
-      id: agId,
-      name: args.agentName,
-      folder,
-      agent_provider: null,
-      created_at: now,
-    });
-    ag = getAgentGroupByFolder(folder)!;
-    console.log(`Created agent group: ${ag.id} (${folder})`);
+  let ag: AgentGroup;
+  let folder: string;
+  if (args.agentGroupId) {
+    const existing = getAgentGroup(args.agentGroupId);
+    if (!existing) throw new Error(`Agent group not found: ${args.agentGroupId}`);
+    ag = existing;
+    folder = existing.folder;
+    console.log(`Using agent group: ${ag.id} (${folder})`);
   } else {
-    console.log(`Reusing agent group: ${ag.id} (${folder})`);
+    folder = `dm-with-${normalizeName(args.displayName)}`;
+    const existing = getAgentGroupByFolder(folder);
+    if (existing) {
+      ag = existing;
+      console.log(`Reusing agent group: ${ag.id} (${folder})`);
+    } else {
+      const agId = generateId('ag');
+      createAgentGroup({
+        id: agId,
+        name: args.agentName,
+        folder,
+        agent_provider: null,
+        created_at: now,
+      });
+      ag = getAgentGroupByFolder(folder)!;
+      console.log(`Created agent group: ${ag.id} (${folder})`);
+    }
+    // A reused group keeps its provider because this insert is idempotent.
+    ensureContainerConfig(ag.id, pickedProvider);
+    stageGroupPersona(
+      path.resolve(GROUPS_DIR, folder),
+      `# ${args.agentName}\n\n` +
+        `You are ${args.agentName}, a personal NanoClaw agent for ${args.displayName}. ` +
+        'When the user first reaches out (or you receive a system welcome prompt), introduce yourself briefly and invite them to chat. Keep replies concise.',
+    );
   }
-  // Seed the config row, stamped with the effective provider: the operator's
-  // setup pick (NANOCLAW_PICKED_PROVIDER) when this runs inside a setup run,
-  // otherwise the persisted instance default. Workspace scaffolding is deferred
-  // to the first spawn (group-init). A reused group keeps its provider
-  // (INSERT OR IGNORE).
-  ensureContainerConfig(ag.id, pickedProvider);
-  stageGroupPersona(
-    path.resolve(GROUPS_DIR, folder),
-    `# ${args.agentName}\n\n` +
-      `You are ${args.agentName}, a personal NanoClaw agent for ${args.displayName}. ` +
-      'When the user first reaches out (or you receive a system welcome prompt), introduce yourself briefly and invite them to chat. Keep replies concise.',
-  );
 
   // 2b. Assign the user a role for this agent group. The caller picks via
   // --role; the channel drivers default to 'owner' for the self-host case.
