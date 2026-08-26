@@ -12,8 +12,10 @@ delta after every refresh**.
 
 ## Reapplying
 
-The `.patch` files here are the local delta against the refreshed baseline, as
-of the 2.2.0 update (`b4511353` → `a004760f`):
+The `.patch` files here are the local delta against the refreshed baseline
+`b4511353` (the post-refresh, pre-reapply commit of the 2.2.0 update). Both are
+round-trip tested: applying them to a `b4511353` worktree reproduces the current
+files byte-for-byte.
 
 ```bash
 git apply --3way docs/local-patches/github-adapter-customizations.patch
@@ -41,10 +43,28 @@ git diff <refresh-commit> HEAD -- src/channels/github.ts > docs/local-patches/gi
 
 **whatsapp.ts**
 - Per-agent `senderName` prefix on outbound (upstream prefixes with the global
-  `ASSISTANT_NAME` only, so every agent posts under one name).
+  `ASSISTANT_NAME` only, so every agent posts under one name). Note this only
+  applies in shared-number mode; on a dedicated number the branch sends
+  unprefixed.
 - Inbound emoji-reaction forwarding (`messages.reaction`). Upstream's reactions
   feature is outbound-only (the `react_to_message` tool + `reactions` container
   skill), so this is complementary, not a duplicate.
+- **Inbound attachments staged into the session inbox.** The branch writes
+  downloaded media to a global `DATA_DIR/attachments` and passes
+  `localPath: attachments/<file>`, which `container/agent-runner/src/formatter.ts`
+  renders to the agent as `/workspace/attachments/<file>` — **a path nothing
+  mounts**. The agent is told about a file it cannot open, with no error
+  anywhere: the download succeeds, the row looks right, the file just isn't
+  reachable. The delta passes the bytes as inline base64 instead, so the host's
+  `writeSessionMessage` → `extractAttachmentFiles` stages them into that
+  session's `inbox/<msgId>/` (the session dir *is* `/workspace`) and rewrites
+  `localPath`. Same thing `chat-sdk-bridge.ts` does for Discord. 30MB inline
+  cap, matching the bridge; larger media is dropped with a failure note.
+
+  **Do not "fix" this by mounting `DATA_DIR/attachments` instead.** That
+  directory is shared by every agent group, so mounting it would expose every
+  chat's attachments to every agent — including stakeholder-facing ones like
+  Falco. Per-session staging is the isolation boundary, not a detail.
 
 ## Watch out
 
@@ -56,3 +76,17 @@ Fix by taking the test from the branch alongside the adapter:
 ```bash
 git show upstream/channels:src/channels/whatsapp.test.ts > src/channels/whatsapp.test.ts
 ```
+
+## History
+
+The attachment delta was lost once already. During the 2.2.0 update it was
+dropped on the reasoning that the branch's `attachments/<file>` + `localPath`
+handling superseded it, and the ledger recorded that as deliberate. It did not
+supersede anything — the mount it assumes does not exist here. The breakage was
+silent until someone forwarded a document to Clawie eight days later and the
+agent could not read it.
+
+The lesson for the next refresh: a local delta that looks redundant against new
+upstream code may be the only thing making that code work in this install. Test
+the behaviour before dropping the patch, rather than reading both versions and
+judging them equivalent.
