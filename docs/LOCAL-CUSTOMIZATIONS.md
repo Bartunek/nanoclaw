@@ -34,6 +34,27 @@ them.
 | `container/skills/whatsapp-formatting/` | Restored from `upstream/channels` after 2.1.54 moved it off trunk. WhatsApp is installed and Clawie + family reference it. Copy from `upstream/channels`, **do not** re-run `/add-whatsapp`. `vercel-cli` was intentionally **not** restored (no group uses it; `vercel` is opt-in via `/add-vercel`). | `9b21b17e` |
 | ~~`container/agent-runner/src/db/session-state.ts`, `mcp-tools/core.ts`, `poll-loop.ts`~~ | **RETIRED 2026-08-18 — subsumed upstream, no longer carried.** The local same-turn duplicate-delivery guard (a fingerprint ledger in outbound.db) was dropped in the 2.2.0 merge. Upstream's `pr-series/stan-midturn-delivery` solves the whole class: a provider declaring `emitsMidTurnText` (claude does) delivers only through the mid-turn door and the result door never sends content, and its `turnDelivered` check reads `chatRowWrittenSince(turnStartSeq)` so it already sees MCP `send_message` rows. Keeping the local guard on top would have swallowed upstream's nudge-and-resend path. Nothing to re-check on future updates. | retired in `2919c652` |
 
+## Upgrade-marker post-commit hook
+
+`.husky/post-commit` (local addition, tracked) re-stamps `data/upgrade-state.json`
+after every ordinary local commit.
+
+The startup tripwire compares `HEAD` + `HEAD^{tree}` against that marker and
+exits if they differ, so **any local commit stops the host at its next restart** —
+not at commit time. In practice that means a power cut days later, a crash loop
+into the 15-minute circuit-breaker backoff, and `systemctl is-active` reporting
+`active` throughout while nothing is served. It happened twice (2026-08-26 after
+the Klaudie ledger commit, 2026-09-07 after the attachment-fix commits: ~2h of
+downtime, on top of an outage that had already eaten three morning digests).
+
+Merge commits are deliberately **not** stamped — an unvalidated upstream merge is
+the case the tripwire exists to catch, and `/update-nanoclaw` stamps those itself
+after validating. The hook stamps `via: local-commit`, which is honest about what
+happened: the commit was not put through build/tests by the hook itself.
+
+Note hooks run from `.husky/` (`core.hooksPath=.husky/_`), so anything dropped in
+`.git/hooks/` is silently ignored here.
+
 ## Memory model (post-2.1.54)
 
 2.1.54 introduced provider-agnostic memory (`groups/<folder>/memory/` OKF tree +
