@@ -1,0 +1,29 @@
+# Re-stamp the upgrade marker after an ordinary local commit.
+#
+# WHY: the startup tripwire (src/upgrade-state.ts) compares HEAD's commit+tree
+# against data/upgrade-state.json and refuses to boot when they differ. A local
+# commit therefore arms a landmine that only fires at the NEXT restart — which
+# in practice is days later, after a power cut, with the host crash-looping into
+# a 15-minute circuit-breaker backoff while `systemctl is-active` still cheerfully
+# reports "active". That has cost real downtime twice (2026-08-26, 2026-09-07).
+#
+# The tripwire reads HEAD^{tree}, not the working tree, so stamping at commit
+# time is exactly sufficient — uncommitted edits never trip it.
+#
+# MERGE COMMITS ARE DELIBERATELY NOT STAMPED. A merge is how upstream code
+# arrives, and an unvalidated upstream merge is precisely what the tripwire is
+# for. Those still stop the host on next boot, and /update-nanoclaw is the fix —
+# it validates (build, tests, migrations, image) and stamps as part of finishing.
+if git rev-parse -q --verify HEAD^2 >/dev/null 2>&1; then
+  echo "post-commit: merge commit — upgrade marker left alone (run /update-nanoclaw)."
+  exit 0
+fi
+
+if pnpm exec tsx scripts/upgrade-state.ts set "" local-commit >/dev/null 2>&1; then
+  echo "post-commit: upgrade marker re-stamped at $(git rev-parse --short HEAD)"
+else
+  echo "post-commit: WARNING — could not re-stamp the upgrade marker."
+  echo "  The host will refuse to start after its next restart. Fix with:"
+  echo '  pnpm exec tsx scripts/upgrade-state.ts set "" local-commit'
+fi
+exit 0
