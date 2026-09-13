@@ -491,7 +491,7 @@ async function deliverMessage(
       ? readOutboxFiles(session.agent_group_id, session.id, msg.id, content.files as string[])
       : undefined;
 
-  const senderName = getAgentGroup(session.agent_group_id)?.name;
+  const senderName = (await getAgentGroup(session.agent_group_id))?.name;
 
   const platformMsgId = await deliveryAdapter.deliver(
     msg.channelType,
