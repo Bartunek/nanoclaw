@@ -25,14 +25,13 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
-# ─── --slack-agents: opt-in flag → env passthrough ─────────────────────
-# Consumed here rather than forwarded: setup:auto reads the env var
-# (NANOCLAW_SLACK_AGENTS=1, checked in setup/channels/slack-auto-register.ts).
-# Without the flag, nothing changes.
+# ─── --slack-agents: former testing flag, accepted and ignored ─────────
+# The managed Slack experience is simply the default; the flag that once
+# enabled it is swallowed so older invocations keep working.
 _filtered_args=()
 for arg in "$@"; do
   if [ "$arg" = "--slack-agents" ]; then
-    export NANOCLAW_SLACK_AGENTS=1
+    :
   else
     _filtered_args+=("$arg")
   fi
@@ -48,7 +47,7 @@ for arg in "$@"; do
     fi
     echo "Usage: bash nanoclaw.sh [options]"
     echo ""
-    echo "  --template-path <ref>  Create the first agent from templates/<ref>"
+    echo "  --template-path <ref>  Create or update an agent from templates/<ref>"
     echo "  --uninstall            Uninstall this NanoClaw copy"
     echo "  --help, -h             Show this help without installing dependencies"
     exit 0
@@ -424,10 +423,17 @@ fi
 # wipe it.
 export NANOCLAW_BOOTSTRAPPED=1
 
-# setup.sh may have just installed pnpm via npm into a prefix that's not on
-# our PATH (custom `npm config set prefix`, or the default prefix missing
-# from the shell's login PATH). Its PATH mutation doesn't propagate back
-# to us — so replay the same lookup here before the exec.
+# setup.sh may have just installed Node/npm/pnpm under ~/.local/bin via
+# uvx-nodeenv. Its PATH mutation doesn't propagate back to this parent shell,
+# so make that standard user bin directory discoverable before probing npm.
+# Keep an existing PATH entry in place rather than adding duplicates.
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac
+
+# pnpm may instead have landed in npm's configured global prefix. Replay that
+# lookup here as a second recovery path before the final exec.
 if ! command -v pnpm >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
   NPM_PREFIX="$(npm config get prefix 2>/dev/null)"
   if [ -n "$NPM_PREFIX" ] && [ -x "$NPM_PREFIX/bin/pnpm" ]; then
