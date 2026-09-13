@@ -209,12 +209,7 @@ export async function run(args: string[]): Promise<void> {
       });
 
       // Request pairing code only on first connect (not reconnect after 515).
-      if (
-        !isReconnect &&
-        method === 'pairing-code' &&
-        phone &&
-        !state.creds.registered
-      ) {
+      if (!isReconnect && method === 'pairing-code' && phone && !state.creds.registered) {
         setTimeout(async () => {
           try {
             const code = await sock.requestPairingCode(phone);
@@ -250,9 +245,7 @@ export async function run(args: string[]): Promise<void> {
         }
 
         if (connection === 'close') {
-          const reason = (
-            lastDisconnect?.error as { output?: { statusCode?: number } }
-          )?.output?.statusCode;
+          const reason = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output?.statusCode;
           if (reason === DisconnectReason.loggedOut) {
             clearTimeout(timeout);
             emitStatus('WHATSAPP_AUTH', {
