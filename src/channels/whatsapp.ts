@@ -567,14 +567,13 @@ registerChannelAdapter('whatsapp', {
       }
     }
 
-    /** Download media from an inbound message; bytes ride as base64 for the
-     *  host to stage into the session inbox. */
+    /** Download media from an inbound message, save to /workspace/attachments/. */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async function downloadInboundMedia(
       msg: WAMessage,
       normalized: any,
     ): Promise<{
-      attachments: Array<{ type: string; name: string; data: string; size: number }>;
+      attachments: Array<{ type: string; name: string; localPath: string }>;
       failures: string[];
     }> {
       const mediaTypes: Array<{ key: string; type: string; ext: string }> = [
@@ -583,7 +582,7 @@ registerChannelAdapter('whatsapp', {
         { key: 'audioMessage', type: 'audio', ext: '.ogg' },
         { key: 'documentMessage', type: 'document', ext: '' },
       ];
-      const results: Array<{ type: string; name: string; data: string; size: number }> = [];
+      const results: Array<{ type: string; name: string; localPath: string }> = [];
       const failures: string[] = [];
       for (const { key, type, ext } of mediaTypes) {
         if (!normalized[key]) continue;
@@ -610,25 +609,12 @@ registerChannelAdapter('whatsapp', {
               replacement: filename,
             });
           }
-          // Local customization: hand the bytes to the host as inline base64
-          // instead of writing them to a global DATA_DIR/attachments dir. The
-          // branch version's `localPath: attachments/<file>` renders to the
-          // agent as /workspace/attachments/<file>, but nothing mounts that
-          // directory — the agent is told about a file it cannot open. Passing
-          // `data` routes through writeSessionMessage → extractAttachmentFiles,
-          // which stages the file in THIS session's inbox (mounted at
-          // /workspace) and rewrites localPath to inbox/<msgId>/<file>. Matches
-          // what chat-sdk-bridge.ts already does for Discord, and keeps
-          // attachments per-session rather than in one dir shared by every
-          // agent group.
-          const MAX_INLINE_BYTES = 30 * 1024 * 1024;
-          if (buffer.length > MAX_INLINE_BYTES) {
-            log.warn('Attachment too large to inline; dropping', { type, filename, size: buffer.length });
-            failures.push(type);
-            continue;
-          }
-          results.push({ type, name: filename, data: buffer.toString('base64'), size: buffer.length });
-          log.info('Media downloaded', { type, filename, size: buffer.length });
+          const attachDir = path.join(DATA_DIR, 'attachments');
+          fs.mkdirSync(attachDir, { recursive: true });
+          const filePath = path.join(attachDir, filename);
+          fs.writeFileSync(filePath, buffer);
+          results.push({ type, name: filename, localPath: `attachments/${filename}` });
+          log.info('Media downloaded', { type, filename });
         } catch (err) {
           log.warn('Failed to download media', { type, err });
           failures.push(type);
