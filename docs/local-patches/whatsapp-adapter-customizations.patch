@@ -1,8 +1,7 @@
 diff --git a/src/channels/whatsapp.ts b/src/channels/whatsapp.ts
-index 60686860..4ecb5677 100644
 --- a/src/channels/whatsapp.ts
 +++ b/src/channels/whatsapp.ts
-@@ -567,13 +567,14 @@ registerChannelAdapter('whatsapp', {
+@@ -567,13 +567,14 @@
        }
      }
  
@@ -19,7 +18,7 @@ index 60686860..4ecb5677 100644
        failures: string[];
      }> {
        const mediaTypes: Array<{ key: string; type: string; ext: string }> = [
-@@ -582,7 +583,7 @@ registerChannelAdapter('whatsapp', {
+@@ -582,7 +583,7 @@
          { key: 'audioMessage', type: 'audio', ext: '.ogg' },
          { key: 'documentMessage', type: 'document', ext: '' },
        ];
@@ -28,7 +27,7 @@ index 60686860..4ecb5677 100644
        const failures: string[] = [];
        for (const { key, type, ext } of mediaTypes) {
          if (!normalized[key]) continue;
-@@ -609,12 +610,25 @@ registerChannelAdapter('whatsapp', {
+@@ -609,12 +610,25 @@
                replacement: filename,
              });
            }
@@ -60,85 +59,3 @@ index 60686860..4ecb5677 100644
          } catch (err) {
            log.warn('Failed to download media', { type, err });
            failures.push(type);
-@@ -964,6 +978,69 @@ registerChannelAdapter('whatsapp', {
-           }
-         }
-       });
-+
-+      // Inbound reactions (emoji tap on a message).
-+      // Baileys emits `messages.reaction` with `key` = target message's key and
-+      // `reaction.key` = reactor's own message envelope (carries participant/fromMe).
-+      // We only forward reactions whose target is the bot's own message — random
-+      // reactions on other participants' messages would otherwise wake the agent
-+      // for every emoji in a group.
-+      sock.ev.on('messages.reaction', async (reactions) => {
-+        for (const item of reactions) {
-+          try {
-+            // Baileys populates remoteJidAlt / participantAlt at runtime, but
-+            // messages.reaction types its keys as bare proto.IMessageKey
-+            // (without the WAMessageKey extension fields). Cast for access.
-+            const targetKey = item.key as WAMessageKey | null | undefined;
-+            const reactorKey = item.reaction?.key as WAMessageKey | null | undefined;
-+            if (!targetKey?.fromMe) continue; // not a reaction to our message
-+            if (reactorKey?.fromMe) continue; // we initiated this reaction
-+
-+            const emoji = (item.reaction?.text ?? '').trim();
-+            const isUnreact = !emoji;
-+
-+            const rawChat = reactorKey?.remoteJid || targetKey.remoteJid;
-+            if (!rawChat || rawChat === 'status@broadcast') continue;
-+            const chatJid = await translateJid(rawChat, reactorKey?.remoteJidAlt);
-+            const isGroup = chatJid.endsWith('@g.us');
-+
-+            const rawSender = reactorKey?.participant || reactorKey?.remoteJid || rawChat;
-+            const sender = rawSender.endsWith('@lid')
-+              ? await translateJid(rawSender, reactorKey?.participantAlt)
-+              : rawSender;
-+            const senderName = sender.split('@')[0];
-+
-+            const ts = item.reaction?.senderTimestampMs
-+              ? new Date(Number(item.reaction.senderTimestampMs)).toISOString()
-+              : new Date().toISOString();
-+
-+            const text = isUnreact ? 'Removed reaction from your message' : `Reacted ${emoji} to your message`;
-+
-+            const inbound: InboundMessage = {
-+              id: reactorKey?.id || `wa-react-${Date.now()}`,
-+              kind: 'chat',
-+              isMention: true,
-+              isGroup,
-+              content: {
-+                text,
-+                sender,
-+                senderName,
-+                isGroup,
-+                chatJid,
-+                reaction: {
-+                  emoji: isUnreact ? null : emoji,
-+                  targetMessageId: targetKey.id ?? null,
-+                  removed: isUnreact,
-+                },
-+              },
-+              timestamp: ts,
-+            };
-+            setupConfig.onInbound(chatJid, null, inbound);
-+          } catch (err) {
-+            log.error('Error processing WhatsApp reaction', { err });
-+          }
-+        }
-+      });
-     }
- 
-     // --- ChannelAdapter implementation ---
-@@ -1068,7 +1145,10 @@ registerChannelAdapter('whatsapp', {
- 
-         if (text) {
-           const { text: formatted, mentions } = formatWhatsApp(text);
--          const prefixed = WHATSAPP_SHARED ? `${ASSISTANT_NAME}: ${formatted}` : formatted;
-+          // Local customization: prefix with the sending agent's own display name
-+          // so each agent posts under its own name on a shared number, falling
-+          // back to the global ASSISTANT_NAME. See OutboundMessage.senderName.
-+          const prefixed = WHATSAPP_SHARED ? `${message.senderName || ASSISTANT_NAME}: ${formatted}` : formatted;
-           return sendRawMessage(platformId, prefixed, mentions);
-         }
-       },
