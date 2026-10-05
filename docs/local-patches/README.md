@@ -41,14 +41,15 @@ git diff <refresh-commit> HEAD -- src/channels/github.ts > docs/local-patches/gi
 - PR/issue context enrichment wrapper (`withContextEnrichment`), which prepends
   the PR/issue coordinates + a `gh` hint to inbound messages.
 
-**whatsapp.ts**
-- Per-agent `senderName` prefix on outbound (upstream prefixes with the global
-  `ASSISTANT_NAME` only, so every agent posts under one name). Note this only
-  applies in shared-number mode; on a dedicated number the branch sends
-  unprefixed.
-- Inbound emoji-reaction forwarding (`messages.reaction`). Upstream's reactions
-  feature is outbound-only (the `react_to_message` tool + `reactions` container
-  skill), so this is complementary, not a duplicate.
+**whatsapp.ts** — one delta remains.
+
+Two former deltas were **absorbed upstream during the 2.3.0 update** and are no
+longer carried here: the per-agent `senderName` prefix, and inbound
+emoji-reaction forwarding (`messages.reaction`). Both now exist on the
+`channels` branch, verified by diffing the refreshed file against
+`upstream/channels`. Do not re-add them — you would duplicate upstream
+behaviour.
+
 - **Inbound attachments staged into the session inbox.** The branch writes
   downloaded media to a global `DATA_DIR/attachments` and passes
   `localPath: attachments/<file>`, which `container/agent-runner/src/formatter.ts`
@@ -85,6 +86,13 @@ handling superseded it, and the ledger recorded that as deliberate. It did not
 supersede anything — the mount it assumes does not exist here. The breakage was
 silent until someone forwarded a document to Clawie eight days later and the
 agent could not read it.
+
+During the 2.3.0 update all three whatsapp deltas were wiped by the skill
+refresh again (`copy: fetch channels → refresh src/channels/whatsapp.ts`). This
+time each was checked against `upstream/channels` before reapplying: two were
+genuinely upstream now, the attachment one was not. That check is the routine —
+diff the refreshed file against the pristine branch copy, per delta, and only
+reapply what is actually missing.
 
 The lesson for the next refresh: a local delta that looks redundant against new
 upstream code may be the only thing making that code work in this install. Test

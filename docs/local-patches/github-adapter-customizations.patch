@@ -1,8 +1,7 @@
 diff --git a/src/channels/github.ts b/src/channels/github.ts
-index ab17d2c2..b9b105ae 100644
 --- a/src/channels/github.ts
 +++ b/src/channels/github.ts
-@@ -5,11 +5,60 @@
+@@ -5,12 +5,61 @@
   */
  import { createGitHubAdapter } from '@chat-adapter/github';
  
@@ -12,7 +11,7 @@ index ab17d2c2..b9b105ae 100644
  import { createChatSdkBridge } from './chat-sdk-bridge.js';
  import { registerChannelAdapter } from './channel-registry.js';
  
-+/**
+ /**
 + * The router strips thread_id before the agent sees a message (see
 + * container/agent-runner formatter), so a GitHub comment arrives with no clue
 + * which PR/issue it's on — only the repo (via the destination name). We parse
@@ -61,10 +60,11 @@ index ab17d2c2..b9b105ae 100644
 +  return adapter;
 +}
 +
- /**
++/**
   * Dedicated bot identity. group threads:true — every issue/PR comment thread
   * is its own conversation and session (the long-standing GitHub behavior,
-@@ -23,19 +72,44 @@ const GITHUB_DEFAULTS: ChannelDefaults = {
+  * now declared instead of forced by supportsThreads alone).
+@@ -23,19 +72,44 @@
  
  registerChannelAdapter('github', {
    factory: () => {
